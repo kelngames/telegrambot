@@ -2,61 +2,54 @@ import json
 import logging
 import urllib
 import urllib2
-
-from google.appengine.api import urlfetch
-from google.appengine.ext import ndb
 import webapp2
+import configuration
+
 
 TOKEN = '123114393:AAGYRwRimcRJlFiCKt_PWsJBJqOJJNvfGUA'
 
+MY_URL = "https://apps-keln.rhcloud.com/"
+
 BASE_URL = 'https://api.telegram.org/bot' + TOKEN + '/'
 
-
-# ================================
-
-class EnableStatus(ndb.Model):
-    # key name: str(chat_id)
-    enabled = ndb.BooleanProperty(indexed=False, default=False)
+# config = configuration.Configuration('config/syslog.json')
+# config.configuration['log_file'] = "sample_data/syslog"
+# config.save()
 
 
-# ================================
+config = configuration.Configuration("telebot.json")
 
-def setEnabled(chat_id, yes):
-    es = EnableStatus.get_or_insert(str(chat_id))
-    es.enabled = yes
-    es.put()
 
-def getEnabled(chat_id):
-    es = EnableStatus.get_by_id(str(chat_id))
-    if es:
-        return es.enabled
+def set_enabled(chat_id, yes):
+    config.configuration[chat_id] = yes
+    config.save()
+
+def get_enabled(chat_id):
+    if config.configuration[chat_id]:
+        return config.configuration[chat_id]
     return False
 
 # ================================
 
 class MeHandler(webapp2.RequestHandler):
     def get(self):
-        urlfetch.set_default_fetch_deadline(60)
-        self.response.write(json.dumps(json.load(urllib2.urlopen(BASE_URL + 'getMe'))))
+        self.response.write(json.dumps(json.load(urllib2.urlopen(BASE_URL + 'getMe', timeout=60))))
 
 
 class GetUpdatesHandler(webapp2.RequestHandler):
     def get(self):
-        urlfetch.set_default_fetch_deadline(60)
-        self.response.write(json.dumps(json.load(urllib2.urlopen(BASE_URL + 'getUpdates'))))
+        self.response.write(json.dumps(json.load(urllib2.urlopen(BASE_URL + 'getUpdates', timeout=60))))
 
 
 class SetWebhookHandler(webapp2.RequestHandler):
     def get(self):
-        urlfetch.set_default_fetch_deadline(60)
         url = self.request.get('url')
         if url:
-            self.response.write(json.dumps(json.load(urllib2.urlopen(BASE_URL + 'setWebhook', urllib.urlencode({'url': url})))))
+            self.response.write(json.dumps(json.load(urllib2.urlopen(BASE_URL + 'setWebhook', urllib.urlencode({'url': url}), timeout=60))))
 
 
 class WebhookHandler(webapp2.RequestHandler):
     def post(self):
-        urlfetch.set_default_fetch_deadline(60)
         body = json.loads(self.request.body)
         logging.info('request body:')
         logging.info(body)
@@ -88,12 +81,10 @@ class WebhookHandler(webapp2.RequestHandler):
         if text.startswith('/'):
             if text == '/start':
                 reply('Bot enabled')
-                setEnabled(chat_id, True)
+                set_enabled(chat_id, True)
             elif text == '/stop':
                 reply('Bot disabled')
-                setEnabled(chat_id, False)
-            elif text == '/elcoche':
-                reply('ILLO EL COCHEEEE')
+                set_enabled(chat_id, False)
             else:
                 reply('What command?')
 
@@ -104,7 +95,7 @@ class WebhookHandler(webapp2.RequestHandler):
         elif 'what time' in text:
             reply('look at the top-right corner of your screen!')
         else:
-            if getEnabled(chat_id):
+            if get_enabled(chat_id):
                 resp1 = json.load(urllib2.urlopen('http://www.simsimi.com/requestChat?lc=en&ft=1.0&req=' + urllib.quote_plus(text.encode('utf-8'))))
                 back = resp1.get('res')
                 if not back:
@@ -123,3 +114,18 @@ app = webapp2.WSGIApplication([
     ('/set_webhook', SetWebhookHandler),
     ('/webhook', WebhookHandler),
 ], debug=True)
+
+def set_webhook():
+    url = MY_URL + "/webhook/"
+    if url:
+        print(BASE_URL + 'setWebhook', urllib.urlencode({'url': url}))
+        urllib2.urlopen(BASE_URL + 'setWebhook', urllib.urlencode({'url': url}))
+
+def main():
+    from paste import httpserver
+    set_webhook()
+    httpserver.serve(app, host='0.0.0.0', port='8080')
+
+
+if __name__ == '__main__':
+    main()
